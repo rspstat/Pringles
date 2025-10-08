@@ -40,3 +40,48 @@ frontend:
 cd frontend
 npm run dev
 ```
+
+<ㅠㄱ/>
+
+## Github Push
+```
+cd C:\Users\win11\Desktop\assignment\Pringles
+
+# Git 초기화
+rm -rf .git
+rm -f .gitattributes
+git init
+git branch -M main
+git lfs install
+
+# LFS 추적 설정
+git lfs track "**/*.zip"
+git lfs track "**/*.rar"
+git lfs track "**/*.pdf"
+git lfs track "**/*.psd"
+git lfs track "**/*.mp4"
+git lfs track "**/*.exe"
+git lfs track "uploads/**"
+git add .gitattributes
+git commit -m "chore: LFS 설정"
+
+# .gitignore
+cat > .gitignore << EOL
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.pyc
+.env
+.DS_Store
+EOL
+
+# 전체 커밋
+git add .
+git commit -m "initial commit: 전체 프로젝트"
+
+# 푸시
+git remote add origin https://github.com/rspstat/Pringles.git
+git lfs push origin main --all
+git push -u origin main --force
+```
