@@ -41,9 +41,9 @@ cd frontend
 npm run dev
 ```
 
-<ㅠㄱ/>
+<br/>
 
-## Github Push
+## Github Push (그대로 bash에 복붙)
 ```
 cd C:\Users\win11\Desktop\assignment\Pringles
 
