@@ -28,7 +28,7 @@
 
 <br/>
 
-## Activation
+## Activation(백, 프론트 각각 그대로 터미널에 복붙)
 ```
 backend:
 cd backend
