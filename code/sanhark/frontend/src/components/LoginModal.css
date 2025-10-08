@@ -1,0 +1,139 @@
+/* 모달 오버레이 */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* 모달 컨텐츠 */
+.modal-content {
+  background-color: #27272a;
+  border-radius: 16px;
+  padding: 32px;
+  width: 90%;
+  max-width: 400px;
+  position: relative;
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* 닫기 버튼 */
+.modal-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: transparent;
+  border: none;
+  color: #a1a1aa;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 8px;
+  transition: background-color 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-close:hover {
+  background-color: #3f3f46;
+  color: #f4f4f5;
+}
+
+/* 모달 헤더 */
+.modal-header {
+  margin-bottom: 32px;
+  text-align: center;
+}
+
+.modal-header h2 {
+  font-size: 24px;
+  font-weight: 600;
+  color: #f4f4f5;
+  margin-bottom: 8px;
+}
+
+.modal-header p {
+  font-size: 14px;
+  color: #a1a1aa;
+}
+
+/* 로그인 버튼 */
+.login-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.login-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 14px 24px;
+  border: none;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.login-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.login-icon {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+/* 구글 버튼 */
+.login-button.google {
+  background-color: #ffffff;
+  color: #3c4043;
+  border: 1px solid #dadce0;
+}
+
+.login-button.google:hover {
+  background-color: #f8f9fa;
+}
+
+/* 카카오 버튼 */
+.login-button.kakao {
+  background-color: #FEE500;
+  color: #000000;
+}
+
+.login-button.kakao:hover {
+  background-color: #fdd835;
+}
