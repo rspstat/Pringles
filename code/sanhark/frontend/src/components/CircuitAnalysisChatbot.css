@@ -385,3 +385,66 @@
 .chat-area::-webkit-scrollbar-thumb:hover {
   background: #52525b;
 }
+
+/* HCA 버튼 */
+.hca-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+/* 채팅 히스토리 컨테이너 */
+.chat-history-container {
+  margin-top: 8px;
+  max-height: 400px;
+  overflow: hidden;
+  animation: slideDown 0.2s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    max-height: 0;
+    opacity: 0;
+  }
+  to {
+    max-height: 400px;
+    opacity: 1;
+  }
+}
+
+/* 리사이저 */
+.sidebar-resizer {
+  width: 4px;
+  background: transparent;
+  cursor: col-resize;
+  position: relative;
+  flex-shrink: 0;
+  transition: background-color 0.2s;
+}
+
+.sidebar-resizer:hover {
+  background: #3b82f6;
+}
+
+.sidebar-resizer::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  right: -4px;
+  /* 클릭 영역 확대 */
+}
+
+/* 리사이징 중일 때 */
+.chatbot-container.resizing {
+  user-select: none;
+  cursor: col-resize;
+}
+
+/* 사이드바 너비 수정 */
+.sidebar.open {
+  width: 260px; /* 기본값, JS로 오버라이드 */
+  transition: none; /* 리사이징 시 transition 제거 */
+}
