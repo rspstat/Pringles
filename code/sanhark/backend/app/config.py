@@ -9,6 +9,10 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "uploads"
     ALLOWED_EXTENSIONS: str = "sch,brd,pdf,png,jpg,jpeg,svg"
     
+    # Supabase 설정
+    SUPABASE_URL: str = ""
+    SUPABASE_KEY: str = ""
+    
     @property
     def allowed_extensions_list(self) -> List[str]:
         return self.ALLOWED_EXTENSIONS.split(",")

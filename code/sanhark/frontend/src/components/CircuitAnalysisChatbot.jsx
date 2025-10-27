@@ -4,6 +4,7 @@ import './CircuitAnalysisChatbot.css';
 import LoginModal from './LoginModal';
 import FileUpload from './FileUpload';
 import ChatHistory from './ChatHistory';
+import { createChatRoom, getChatRooms, sendMessage, getMessages, deleteChatRoom, updateChatRoomName } from '../services/api';
 
 export default function CircuitAnalysisChatbot() {
   const [messages, setMessages] = useState([]);
@@ -18,38 +19,29 @@ export default function CircuitAnalysisChatbot() {
   const saved = localStorage.getItem('showChatHistory');
     return saved !== null ? JSON.parse(saved) : true; // 기본값 true
   });
+  const [chatHistory, setChatHistory] = useState([]);
 
-  // showChatHistory 변경 시 저장
   useEffect(() => {
-    localStorage.setItem('showChatHistory', JSON.stringify(showChatHistory));
-  }, [showChatHistory]);
+    loadChatRooms();
+  }, []);
 
-  const [chatHistory, setChatHistory] = useState([
-    {
-      id: '1',
-      title: '회로 분석 질문',
-      preview: '이 회로의 총 저항은?',
-      createdAt: new Date().toISOString(),
-      messages: [
-        { text: '이 회로의 총 저항은?', sender: 'user' },
-        { text: '총 저항을 계산하겠습니다...', sender: 'ai' }
-      ]
-    },
-    {
-      id: '2',
-      title: '키르히호프 법칙',
-      preview: 'KVL과 KCL의 차이점은?',
-      createdAt: new Date(Date.now() - 86400000).toISOString(),
-      messages: []
-    },
-    {
-      id: '3',
-      title: '테브난 정리',
-      preview: '테브난 등가회로를 구하는 방법',
-      createdAt: new Date(Date.now() - 86400000 * 3).toISOString(),
-      messages: []
+  const loadChatRooms = async () => {
+    try {
+      const response = await getChatRooms();
+      if (response.success) {
+        const formattedChats = response.data.map(room => ({
+          id: room.id,
+          title: room.name || '새 채팅',  // 빈 문자열이면 "새 채팅" 표시
+          preview: room.description || '',
+          createdAt: room.created_at,
+          messages: []
+        }));
+        setChatHistory(formattedChats);
+      }
+    } catch (error) {
+      console.error('채팅방 목록 로드 실패:', error);
     }
-  ]);
+  };
 
   // 메시지 변경 시 채팅 목록 업데이트
   useEffect(() => {
@@ -64,34 +56,37 @@ export default function CircuitAnalysisChatbot() {
     }
   }, [messages, currentChatId]);
 
-  const handleSendMessage = () => {
-    if (inputValue.trim()) {
-      const userMessage = inputValue;
-      
-      // 채팅 제목 업데이트 (첫 메시지일 때)
-      if (currentChatId && messages.length === 0) {
-        setChatHistory(prev => 
-          prev.map(chat => 
-            chat.id === currentChatId 
-              ? { 
-                  ...chat, 
-                  title: userMessage.slice(0, 30) + (userMessage.length > 30 ? '...' : ''),
-                  preview: userMessage.slice(0, 50)
-                }
-              : chat
-          )
-        );
+  const handleSendMessage = async () => {
+    if (!inputValue.trim() || !currentChatId) return;
+    
+    const userMessage = inputValue;
+    setInputValue('');
+    setMessages(prev => [...prev, { text: userMessage, sender: 'user' }]);
+    
+    try {
+      const response = await sendMessage(currentChatId, userMessage);
+      if (response.success) {
+        setMessages(prev => [...prev, { text: response.response, sender: 'ai' }]);
+        
+        // 첫 메시지일 때 채팅방 이름 업데이트
+        if (messages.length === 0) {
+          const newTitle = userMessage.slice(0, 30) + (userMessage.length > 30 ? '...' : '');
+          
+          // DB에 업데이트
+          await updateChatRoomName(currentChatId, newTitle);
+          
+          // UI 업데이트
+          setChatHistory(prev => 
+            prev.map(chat => 
+              chat.id === currentChatId 
+                ? { ...chat, title: newTitle, preview: userMessage.slice(0, 50) }
+                : chat
+            )
+          );
+        }
       }
-      
-      setMessages([...messages, { text: userMessage, sender: 'user' }]);
-      setInputValue('');
-      
-      setTimeout(() => {
-        setMessages(prev => [...prev, { 
-          text: '회로 분석을 도와드리겠습니다. 어떤 회로에 대해 질문하시나요?', 
-          sender: 'ai' 
-        }]);
-      }, 1000);
+    } catch (error) {
+      console.error('메시지 전송 실패:', error);
     }
   };
 
@@ -102,40 +97,60 @@ export default function CircuitAnalysisChatbot() {
     }
   };
 
-  const handleSelectChat = (chatId) => {
+  const handleSelectChat = async (chatId) => {
     setCurrentChatId(chatId);
-    const chat = chatHistory.find(c => c.id === chatId);
-    if (chat) {
-      setMessages(chat.messages);
-    }
-    setShowChatHistory(false);
-  };
-
-  const handleDeleteChat = (chatId) => {
-    setChatHistory(prev => prev.filter(chat => chat.id !== chatId));
-    if (currentChatId === chatId) {
-      setCurrentChatId(null);
-      setMessages([]);
-    }
-  };
-
-  const handleNewChat = () => {
-    // 즉시 새 채팅 생성
-    const newChat = {
-      id: Date.now().toString(),
-      title: '새 채팅',
-      preview: '',
-      createdAt: new Date().toISOString(),
-      messages: []
-    };
     
-    setChatHistory(prev => [newChat, ...prev]);
-    setCurrentChatId(newChat.id);
-    setMessages([]);
-    setShowChatHistory(true);
+    try {
+      const response = await getMessages(chatId);
+      if (response.success) {
+        const formattedMessages = response.data.map(msg => ({
+          text: msg.content,
+          sender: msg.role === 'user' ? 'user' : 'ai'
+        }));
+        setMessages(formattedMessages);
+      }
+    } catch (error) {
+      console.error('메시지 로드 실패:', error);
+    }
   };
 
-    // 리사이저 관련 함수 추가
+  const handleDeleteChat = async (chatId) => {
+    try {
+      await deleteChatRoom(chatId);
+      setChatHistory(prev => prev.filter(chat => chat.id !== chatId));
+      if (currentChatId === chatId) {
+        setCurrentChatId(null);
+        setMessages([]);
+      }
+    } catch (error) {
+      console.error('채팅방 삭제 실패:', error);
+    }
+  };
+
+  const handleNewChat = async () => {
+    try {
+      const response = await createChatRoom('', '');  // 빈 문자열로 생성
+      
+      if (response.success) {
+        const newChat = {
+          id: response.data.id,
+          title: '새 채팅',  // UI에만 표시
+          preview: '',
+          createdAt: response.data.created_at,
+          messages: []
+        };
+        
+        setChatHistory(prev => [newChat, ...prev]);
+        setCurrentChatId(newChat.id);
+        setMessages([]);
+        setShowChatHistory(true);
+      }
+    } catch (error) {
+      console.error('새 채팅 생성 실패:', error);
+    }
+  };
+
+  // 리사이저 관련 함수 추가
   const startResizing = React.useCallback(() => {
     setIsResizing(true);
   }, []);

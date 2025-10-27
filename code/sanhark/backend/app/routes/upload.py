@@ -1,77 +1,67 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, Form
 from typing import List
 from app.services.file_service import FileService
+from app.database.supabase_db import get_supabase
 
 router = APIRouter(prefix="/upload", tags=["upload"])
 
 @router.post("/")
-async def upload_file(file: UploadFile = File(...)):
-    """단일 파일 업로드"""
+async def upload_file(
+    room_id: str = Form(...),
+    file: UploadFile = File(...)
+):
+    """단일 파일 업로드 + Supabase 저장"""
     try:
+        # 로컬 저장
         result = await FileService.save_file(file)
+        
+        # Supabase에 메타데이터 저장
+        supabase = get_supabase()
+        file_data = {
+            "room_id": room_id,
+            "file_name": result["original_filename"],
+            "file_path": result["file_path"],
+            "file_size": result["file_size"],
+            "file_type": result["extension"]
+        }
+        db_response = supabase.table("uploaded_files").insert(file_data).execute()
+        
         return {
             "success": True,
             "message": "파일 업로드 성공",
-            "data": result
+            "data": {**result, "db_id": db_response.data[0]["id"]}
         }
     except HTTPException as e:
         raise e
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"업로드 실패: {str(e)}")
 
-@router.post("/multiple")
-async def upload_multiple_files(files: List[UploadFile] = File(...)):
-    """다중 파일 업로드"""
-    if len(files) > 10:
-        raise HTTPException(status_code=400, detail="최대 10개 파일까지 가능")
-    
-    results = []
-    errors = []
-    
-    for file in files:
-        try:
-            result = await FileService.save_file(file)
-            results.append(result)
-        except Exception as e:
-            errors.append({"filename": file.filename, "error": str(e)})
-    
-    return {
-        "success": len(errors) == 0,
-        "message": f"{len(results)}개 성공, {len(errors)}개 실패",
-        "uploaded": results,
-        "errors": errors
-    }
+@router.get("/room/{room_id}")
+async def get_room_files(room_id: str):
+    """채팅방의 파일 목록"""
+    supabase = get_supabase()
+    response = supabase.table("uploaded_files")\
+        .select("*")\
+        .eq("room_id", room_id)\
+        .order("uploaded_at", desc=True)\
+        .execute()
+    return {"success": True, "data": response.data}
 
-@router.get("/list")
-async def list_files():
-    """업로드된 파일 목록"""
-    import os
-    from app.config import settings
-    
-    upload_dir = settings.UPLOAD_DIR
-    if not os.path.exists(upload_dir):
-        return {"files": []}
-    
-    files = []
-    for filename in os.listdir(upload_dir):
-        file_path = os.path.join(upload_dir, filename)
-        if os.path.isfile(file_path):
-            file_info = FileService.get_file_info(file_path)
-            if file_info:
-                file_info["filename"] = filename
-                files.append(file_info)
-    
-    return {"files": files}
-
-@router.delete("/{filename}")
-async def delete_file(filename: str):
+@router.delete("/{file_id}")
+async def delete_file(file_id: str):
     """파일 삭제"""
-    import os
-    from app.config import settings
+    supabase = get_supabase()
     
-    file_path = os.path.join(settings.UPLOAD_DIR, filename)
-    
-    if FileService.delete_file(file_path):
-        return {"success": True, "message": "삭제 완료"}
-    else:
+    # DB에서 파일 정보 조회
+    file_info = supabase.table("uploaded_files").select("*").eq("id", file_id).execute()
+    if not file_info.data:
         raise HTTPException(status_code=404, detail="파일 없음")
+    
+    # 로컬 파일 삭제
+    file_path = file_info.data[0]["file_path"]
+    FileService.delete_file(file_path)
+    
+    # DB에서 삭제
+    supabase.table("uploaded_files").delete().eq("id", file_id).execute()
+    
+    return {"success": True, "message": "삭제 완료"}
