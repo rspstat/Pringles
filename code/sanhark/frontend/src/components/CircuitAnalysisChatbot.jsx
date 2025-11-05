@@ -14,6 +14,7 @@ export default function CircuitAnalysisChatbot() {
   const [currentChatId, setCurrentChatId] = useState(null);
   const [sidebarWidth, setSidebarWidth] = useState(260);
   const [isResizing, setIsResizing] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   const [showChatHistory, setShowChatHistory] = useState(() => {
   const saved = localStorage.getItem('showChatHistory');
@@ -56,39 +57,44 @@ export default function CircuitAnalysisChatbot() {
     }
   }, [messages, currentChatId]);
 
-  const handleSendMessage = async () => {
-    if (!inputValue.trim() || !currentChatId) return;
-    
-    const userMessage = inputValue;
-    setInputValue('');
-    setMessages(prev => [...prev, { text: userMessage, sender: 'user' }]);
-    
-    try {
-      const response = await sendMessage(currentChatId, userMessage);
-      if (response.success) {
-        setMessages(prev => [...prev, { text: response.response, sender: 'ai' }]);
-        
-        // 첫 메시지일 때 채팅방 이름 업데이트
-        if (messages.length === 0) {
-          const newTitle = userMessage.slice(0, 30) + (userMessage.length > 30 ? '...' : '');
-          
-          // DB에 업데이트
-          await updateChatRoomName(currentChatId, newTitle);
-          
-          // UI 업데이트
-          setChatHistory(prev => 
-            prev.map(chat => 
-              chat.id === currentChatId 
-                ? { ...chat, title: newTitle, preview: userMessage.slice(0, 50) }
-                : chat
-            )
-          );
-        }
+  
+const handleSendMessage = async () => {
+  if (!inputValue.trim() || !currentChatId) return;
+  
+  const userMessage = inputValue;
+  setInputValue('');
+  setMessages(prev => [...prev, { text: userMessage, sender: 'user' }]);
+  
+  // 로딩 메시지 추가
+  setIsLoading(true);
+  setMessages(prev => [...prev, { text: '답변 생성중', sender: 'ai', isLoading: true }]);
+  
+  try {
+    const response = await sendMessage(currentChatId, userMessage);
+    if (response.success) {
+      // 로딩 메시지 제거 후 실제 응답 추가
+      setMessages(prev => prev.filter(msg => !msg.isLoading));
+      setMessages(prev => [...prev, { text: response.response, sender: 'ai' }]);
+      
+      if (messages.length === 0) {
+        const newTitle = userMessage.slice(0, 30) + (userMessage.length > 30 ? '...' : '');
+        await updateChatRoomName(currentChatId, newTitle);
+        setChatHistory(prev => 
+          prev.map(chat => 
+            chat.id === currentChatId 
+              ? { ...chat, title: newTitle, preview: userMessage.slice(0, 50) }
+              : chat
+          )
+        );
       }
-    } catch (error) {
-      console.error('메시지 전송 실패:', error);
     }
-  };
+  } catch (error) {
+    console.error('메시지 전송 실패:', error);
+    setMessages(prev => prev.filter(msg => !msg.isLoading));
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   const handleKeyPress = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -313,14 +319,14 @@ export default function CircuitAnalysisChatbot() {
             </div>
           ) : (
             <div className="messages-container">
-              {messages.map((msg, idx) => (
-                <div key={idx} className={`message ${msg.sender}`}>
-                  <div className="message-bubble">
-                    {msg.text}
-                  </div>
+            {messages.map((msg, idx) => (
+              <div key={idx} className={`message ${msg.sender}`}>
+                <div className="message-bubble">
+                  {msg.isLoading ? <span className="loading-dots">답변 생성중</span> : msg.text}
                 </div>
-              ))}
-            </div>
+              </div>
+            ))}
+          </div>
           )}
         </div>
 

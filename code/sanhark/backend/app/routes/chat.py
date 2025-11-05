@@ -2,6 +2,8 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from app.database.supabase_db import get_supabase
+# from app.services.openai_service import get_ai_response
+from app.services.gemini_service import get_ai_response
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -62,8 +64,22 @@ async def send_message(request: ChatRequest):
     }
     supabase.table("chat_messages").insert(user_msg).execute()
     
-    # AI 응답 (임시)
-    ai_response = f"회로 분석 중: '{request.message}'"
+    # 이전 대화 내역 가져오기
+    history = supabase.table("chat_messages")\
+        .select("role, content")\
+        .eq("room_id", request.room_id)\
+        .order("created_at", desc=False)\
+        .execute()
+    
+    conversation_history = [
+        {"role": msg["role"], "content": msg["content"]} 
+        for msg in history.data
+    ]
+    
+    # OpenAI로 응답 생성
+    ai_response = get_ai_response(request.message, conversation_history)
+    
+    # AI 응답 저장
     ai_msg = {
         "room_id": request.room_id,
         "role": "assistant",

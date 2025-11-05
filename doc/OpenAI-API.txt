@@ -1,0 +1,3 @@
+name: Pringles
+key:
+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

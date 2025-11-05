@@ -7,3 +7,4 @@ pydantic-settings==2.0.3
 supabase==2.7.4
 websockets==11.0.3
 realtime==2.0.4
+google-generativeai>=0.3.0

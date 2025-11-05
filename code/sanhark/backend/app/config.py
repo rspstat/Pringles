@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     SUPABASE_URL: str = ""
     SUPABASE_KEY: str = ""
     
+    # AI API 설정
+    # OPENAI_API_KEY: str = ""
+    GEMINI_API_KEY: str = ""
+    
     @property
     def allowed_extensions_list(self) -> List[str]:
         return self.ALLOWED_EXTENSIONS.split(",")

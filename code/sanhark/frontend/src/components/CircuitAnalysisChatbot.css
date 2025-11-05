@@ -448,3 +448,14 @@
   width: 260px; /* 기본값, JS로 오버라이드 */
   transition: none; /* 리사이징 시 transition 제거 */
 }
+
+.loading-dots::after {
+  content: '.';
+  animation: dots 1.5s steps(3, end) infinite;
+}
+
+@keyframes dots {
+  0%, 20% { content: '.'; }
+  40% { content: '..'; }
+  60%, 100% { content: '...'; }
+}
