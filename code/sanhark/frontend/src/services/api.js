@@ -63,6 +63,48 @@ export const sendMessage = async (roomId, message) => {
   }
 };
 
+// 기존 sendMessage 아래에 추가
+export const sendMessageStream = async (roomId, message, onChunk) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/chat/message/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        room_id: roomId,
+        message
+      })
+    });
+    
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      
+      const chunk = decoder.decode(value);
+      const lines = chunk.split('\n');
+      
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = JSON.parse(line.slice(6));
+          if (data.text) {
+            onChunk(data.text);
+          }
+          if (data.done) {
+            return;
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error('스트리밍 에러:', error);
+    throw error;
+  }
+};
+
 // 메시지 조회
 export const getMessages = async (roomId) => {
   try {

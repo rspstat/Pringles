@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { MessageSquare, Search, Library, Code, Zap, Menu, Send, Mic, Paperclip, ChevronRight, ChevronDown } from 'lucide-react';
 import './CircuitAnalysisChatbot.css';
 import LoginModal from './LoginModal';
-import FileUpload from './FileUpload';
 import ChatHistory from './ChatHistory';
 import { createChatRoom, getChatRooms, sendMessage, getMessages, deleteChatRoom, updateChatRoomName } from '../services/api';
+import { sendMessageStream } from '../services/api';
+import { uploadFile } from '../services/api';
 
 export default function CircuitAnalysisChatbot() {
   const [messages, setMessages] = useState([]);
@@ -15,6 +16,8 @@ export default function CircuitAnalysisChatbot() {
   const [sidebarWidth, setSidebarWidth] = useState(260);
   const [isResizing, setIsResizing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [uploadedFiles, setUploadedFiles] = useState([]);
 
   const [showChatHistory, setShowChatHistory] = useState(() => {
   const saved = localStorage.getItem('showChatHistory');
@@ -58,43 +61,75 @@ export default function CircuitAnalysisChatbot() {
   }, [messages, currentChatId]);
 
   
-const handleSendMessage = async () => {
+  const handleSendMessage = async () => {
   if (!inputValue.trim() || !currentChatId) return;
   
   const userMessage = inputValue;
   setInputValue('');
-  setMessages(prev => [...prev, { text: userMessage, sender: 'user' }]);
   
-  // 로딩 메시지 추가
-  setIsLoading(true);
-  setMessages(prev => [...prev, { text: '답변 생성중', sender: 'ai', isLoading: true }]);
+  // 사용자 메시지 표시 (파일 정보 포함)
+  let displayMessage = userMessage;
+  if (uploadedFiles.length > 0) {
+    const fileNames = uploadedFiles.map(f => f.name).join(', ');
+    displayMessage = `${userMessage}\n📎 첨부파일: ${fileNames}`;
+  }
+  
+  setMessages(prev => [...prev, { text: displayMessage, sender: 'user' }]);
+  
+  // AI 메시지 placeholder 추가
+  setMessages(prev => [...prev, { text: '', sender: 'ai', streaming: true }]);
+  const aiMessageIndex = messages.length + 1;
   
   try {
-    const response = await sendMessage(currentChatId, userMessage);
-    if (response.success) {
-      // 로딩 메시지 제거 후 실제 응답 추가
-      setMessages(prev => prev.filter(msg => !msg.isLoading));
-      setMessages(prev => [...prev, { text: response.response, sender: 'ai' }]);
-      
-      if (messages.length === 0) {
-        const newTitle = userMessage.slice(0, 30) + (userMessage.length > 30 ? '...' : '');
-        await updateChatRoomName(currentChatId, newTitle);
-        setChatHistory(prev => 
-          prev.map(chat => 
-            chat.id === currentChatId 
-              ? { ...chat, title: newTitle, preview: userMessage.slice(0, 50) }
-              : chat
-          )
-        );
-      }
+    let fullResponse = '';
+    
+    // 파일 정보를 메시지에 포함
+    let messageWithFiles = userMessage;
+    if (uploadedFiles.length > 0) {
+      messageWithFiles += '\n\n[첨부된 파일]\n';
+      uploadedFiles.forEach(file => {
+        messageWithFiles += `- ${file.name}: ${file.url}\n`;
+      });
     }
-  } catch (error) {
-    console.error('메시지 전송 실패:', error);
-    setMessages(prev => prev.filter(msg => !msg.isLoading));
-  } finally {
-    setIsLoading(false);
-  }
-};
+    
+    await sendMessageStream(currentChatId, messageWithFiles, (chunk) => {
+      fullResponse += chunk;
+      setMessages(prev => 
+        prev.map((msg, idx) => 
+          idx === aiMessageIndex ? { ...msg, text: fullResponse } : msg
+        )
+      );
+    });
+    
+    // 스트리밍 완료 후 파일 목록 초기화
+    setUploadedFiles([]);
+    
+    setMessages(prev => 
+      prev.map((msg, idx) => 
+        idx === aiMessageIndex ? { ...msg, streaming: false } : msg
+      )
+    );
+    
+    // 첫 메시지면 제목 업데이트
+    if (messages.length === 0) {
+      const newTitle = userMessage.slice(0, 30) + (userMessage.length > 30 ? '...' : '');
+      await updateChatRoomName(currentChatId, newTitle);
+      setChatHistory(prev => 
+        prev.map(chat => 
+          chat.id === currentChatId 
+            ? { ...chat, title: newTitle, preview: userMessage.slice(0, 50) }
+            : chat
+        )
+      );
+    }
+    
+    } catch (error) {
+      console.error('메시지 전송 실패:', error);
+      setMessages(prev => prev.filter(msg => !msg.streaming));
+    }
+  };
+  
+   
 
   const handleKeyPress = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -153,6 +188,53 @@ const handleSendMessage = async () => {
       }
     } catch (error) {
       console.error('새 채팅 생성 실패:', error);
+    }
+  };
+  
+  const handleDragEnter = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    
+    if (!currentChatId) {
+      alert('먼저 채팅방을 선택하거나 생성해주세요.');
+      return;
+    }
+    
+    const files = Array.from(e.dataTransfer.files);
+    
+    for (const file of files) {
+      try {
+        const response = await uploadFile(currentChatId, file);
+        if (response.success) {
+          setUploadedFiles(prev => [...prev, {
+            id: response.data.id,
+            name: file.name,
+            url: response.data.url
+          }]);
+          console.log('파일 업로드 성공:', file.name);
+        }
+      } catch (error) {
+        console.error('파일 업로드 실패:', file.name, error);
+        alert(`파일 업로드 실패: ${file.name}`);
+      }
     }
   };
 
@@ -309,31 +391,59 @@ const handleSendMessage = async () => {
           {messages.length === 0 ? (
             <div className="empty-state">
               <h1 className="welcome-text">도움이 필요하신가요?</h1>
-              
-              {/* 파일 업로드 추가 */}
-              <FileUpload 
-                onUploadComplete={(results) => {
-                  console.log('업로드 완료:', results);
-                }}
-              />
             </div>
           ) : (
             <div className="messages-container">
-            {messages.map((msg, idx) => (
-              <div key={idx} className={`message ${msg.sender}`}>
-                <div className="message-bubble">
-                  {msg.isLoading ? <span className="loading-dots">답변 생성중</span> : msg.text}
+              {messages.map((msg, idx) => (
+                <div key={idx} className={`message ${msg.sender}`}>
+                  <div className="message-bubble">
+                    {msg.streaming && !msg.text ? (
+                      <span className="loading-dots">답변 생성중</span>
+                    ) : (
+                      msg.text
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
           )}
         </div>
 
         {/* 입력 영역 */}
         <div className="input-area">
           <div className="input-wrapper">
-            <div className="input-container">
+            {/* 업로드된 파일 표시 */}
+            {uploadedFiles.length > 0 && (
+              <div className="uploaded-files-preview">
+                {uploadedFiles.map((file, idx) => (
+                  <div key={idx} className="file-chip">
+                    <Paperclip size={14} />
+                    <span>{file.name}</span>
+                    <button 
+                      onClick={() => setUploadedFiles(prev => prev.filter((_, i) => i !== idx))}
+                      className="remove-file"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            <div 
+              className={`input-container ${isDragging ? 'dragging' : ''}`}
+              onDragEnter={handleDragEnter}
+              onDragLeave={handleDragLeave}
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
+            >
+              {isDragging && (
+                <div className="drag-overlay">
+                  <Paperclip size={40} />
+                  <p>파일을 여기에 놓으세요</p>
+                </div>
+              )}
+              
               <button className="input-button left">
                 <Paperclip size={20} />
               </button>

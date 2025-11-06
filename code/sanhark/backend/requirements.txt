@@ -8,3 +8,4 @@ supabase==2.7.4
 websockets==11.0.3
 realtime==2.0.4
 google-generativeai>=0.3.0
+requests==2.32.5

@@ -2,8 +2,9 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from app.database.supabase_db import get_supabase
-# from app.services.openai_service import get_ai_response
-from app.services.gemini_service import get_ai_response
+from app.services.gemini_service import get_ai_response, get_ai_response_stream
+from fastapi.responses import StreamingResponse
+import json
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -33,7 +34,7 @@ async def get_rooms():
     response = supabase.table("chat_rooms").select("*").order("created_at", desc=True).execute()
     return {"success": True, "data": response.data}
 
-# 채팅방 이름 수정 - 새로 추가
+# 채팅방 이름 수정
 @router.put("/rooms/{room_id}")
 async def update_room(room_id: str, request: UpdateRoomRequest):
     supabase = get_supabase()
@@ -51,9 +52,9 @@ async def delete_room(room_id: str):
         raise HTTPException(status_code=404, detail="채팅방을 찾을 수 없습니다")
     return {"success": True, "message": "채팅방이 삭제되었습니다"}
 
-# 메시지 전송
-@router.post("/message")
-async def send_message(request: ChatRequest):
+# 메시지 전송 (스트리밍)
+@router.post("/message/stream")
+async def send_message_stream(request: ChatRequest):
     supabase = get_supabase()
     
     # 사용자 메시지 저장
@@ -64,7 +65,7 @@ async def send_message(request: ChatRequest):
     }
     supabase.table("chat_messages").insert(user_msg).execute()
     
-    # 이전 대화 내역 가져오기
+    # 대화 내역 가져오기
     history = supabase.table("chat_messages")\
         .select("role, content")\
         .eq("room_id", request.room_id)\
@@ -76,18 +77,23 @@ async def send_message(request: ChatRequest):
         for msg in history.data
     ]
     
-    # OpenAI로 응답 생성
-    ai_response = get_ai_response(request.message, conversation_history)
+    # 스트리밍 응답 생성
+    async def stream_response():
+        full_response = ""
+        for chunk in get_ai_response_stream(request.message, conversation_history):
+            full_response += chunk
+            yield f"data: {json.dumps({'text': chunk})}\n\n"
+        
+        # 완료 후 DB에 저장
+        ai_msg = {
+            "room_id": request.room_id,
+            "role": "assistant",
+            "content": full_response
+        }
+        supabase.table("chat_messages").insert(ai_msg).execute()
+        yield f"data: {json.dumps({'done': True})}\n\n"
     
-    # AI 응답 저장
-    ai_msg = {
-        "room_id": request.room_id,
-        "role": "assistant",
-        "content": ai_response
-    }
-    supabase.table("chat_messages").insert(ai_msg).execute()
-    
-    return {"success": True, "response": ai_response}
+    return StreamingResponse(stream_response(), media_type="text/event-stream")
 
 # 메시지 조회
 @router.get("/messages/{room_id}")
@@ -99,3 +105,67 @@ async def get_messages(room_id: str):
         .order("created_at", desc=False)\
         .execute()
     return {"success": True, "data": response.data}
+
+# 파일 읽기
+@router.post("/message/stream")
+async def send_message_stream(request: ChatRequest):
+    supabase = get_supabase()
+    
+    # 사용자 메시지 저장
+    user_msg = {
+        "room_id": request.room_id,
+        "role": "user",
+        "content": request.message
+    }
+    supabase.table("chat_messages").insert(user_msg).execute()
+    
+    # 대화 내역 가져오기
+    history = supabase.table("chat_messages")\
+        .select("role, content")\
+        .eq("room_id", request.room_id)\
+        .order("created_at", desc=False)\
+        .execute()
+    
+    conversation_history = [
+        {"role": msg["role"], "content": msg["content"]} 
+        for msg in history.data
+    ]
+    
+    # 메시지에서 파일 URL 추출 및 내용 읽기
+    message_with_content = request.message
+    if "[첨부된 파일]" in request.message:
+        import re
+        import requests
+        
+        # URL 패턴 추출
+        urls = re.findall(r'https?://[^\s]+', request.message)
+        
+        for url in urls:
+            try:
+                # 파일 다운로드
+                response = requests.get(url, timeout=10)
+                if response.status_code == 200:
+                    # 텍스트 파일인 경우 내용 추가
+                    if 'text' in response.headers.get('content-type', ''):
+                        file_content = response.text
+                        message_with_content += f"\n\n[파일 내용]\n{file_content}\n"
+            except Exception as e:
+                print(f"파일 읽기 실패: {e}")
+    
+    # 스트리밍 응답 생성
+    async def stream_response():
+        full_response = ""
+        for chunk in get_ai_response_stream(message_with_content, conversation_history):
+            full_response += chunk
+            yield f"data: {json.dumps({'text': chunk})}\n\n"
+        
+        # 완료 후 DB에 저장
+        ai_msg = {
+            "room_id": request.room_id,
+            "role": "assistant",
+            "content": full_response
+        }
+        supabase.table("chat_messages").insert(ai_msg).execute()
+        yield f"data: {json.dumps({'done': True})}\n\n"
+    
+    return StreamingResponse(stream_response(), media_type="text/event-stream")
