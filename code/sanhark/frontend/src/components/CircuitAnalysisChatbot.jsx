@@ -22,6 +22,8 @@ export default function CircuitAnalysisChatbot() {
   const [isLoading, setIsLoading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState([]);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const textareaRef = React.useRef(null);
 
   const [showChatHistory, setShowChatHistory] = useState(() => {
   const saved = localStorage.getItem('showChatHistory');
@@ -66,76 +68,100 @@ export default function CircuitAnalysisChatbot() {
 
   
   const handleSendMessage = async () => {
-  if (!inputValue.trim() || !currentChatId) return;
-  
-  const userMessage = inputValue;
-  setInputValue('');
-  
-  // 사용자 메시지 표시 (파일 정보 포함)
-  let displayMessage = userMessage;
-  if (uploadedFiles.length > 0) {
-    const fileNames = uploadedFiles.map(f => f.name).join(', ');
-    displayMessage = `${userMessage}\n📎 첨부파일: ${fileNames}`;
-  }
-  
-  setMessages(prev => [...prev, { text: displayMessage, sender: 'user' }]);
-  
-  // AI 메시지 placeholder 추가
-  setMessages(prev => [...prev, { text: '', sender: 'ai', streaming: true }]);
-  const aiMessageIndex = messages.length + 1;
-  
-  try {
-    let fullResponse = '';
+    if (!inputValue.trim() || !currentChatId) return;
     
-    // 파일 정보를 메시지에 포함
-    let messageWithFiles = userMessage;
-    if (uploadedFiles.length > 0) {
-      messageWithFiles += '\n\n[첨부된 파일]\n';
-      uploadedFiles.forEach(file => {
-        // URL에서 쿼리 파라미터 제거
-        const cleanUrl = file.url.split('?')[0];
-        messageWithFiles += `- ${file.name}: ${cleanUrl}\n`;
-      });
+    const userMessage = inputValue;
+    setInputValue('');
+    
+    // textarea 높이 초기화
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
     }
     
-    await sendMessageStream(currentChatId, messageWithFiles, (chunk) => {
-      fullResponse += chunk;
+    setIsGenerating(true);
+
+    // 사용자 메시지는 원본만 표시 (파일명 제외)
+    setMessages(prev => [...prev, { text: userMessage, sender: 'user' }]);
+    
+    setMessages(prev => [...prev, { text: '', sender: 'ai', streaming: true }]);
+    const aiMessageIndex = messages.length + 1;
+    
+    try {
+      let fullResponse = '';
+      let messageWithFiles = userMessage;
+      if (uploadedFiles.length > 0) {
+        messageWithFiles += '\n\n[첨부된 파일]\n';
+        uploadedFiles.forEach(file => {
+          const cleanUrl = file.url.split('?')[0];
+          messageWithFiles += `- ${file.name}: ${cleanUrl}\n`;
+        });
+      }
+      
+      await sendMessageStream(currentChatId, messageWithFiles, (chunk) => {
+        fullResponse += chunk;
+        setMessages(prev => 
+          prev.map((msg, idx) => 
+            idx === aiMessageIndex ? { ...msg, text: fullResponse } : msg
+          )
+        );
+      });
+      
+      setUploadedFiles([]);
       setMessages(prev => 
         prev.map((msg, idx) => 
-          idx === aiMessageIndex ? { ...msg, text: fullResponse } : msg
+          idx === aiMessageIndex ? { ...msg, streaming: false } : msg
         )
       );
-    });
-    
-    // 스트리밍 완료 후 파일 목록 초기화
-    setUploadedFiles([]);
-    
-    setMessages(prev => 
-      prev.map((msg, idx) => 
-        idx === aiMessageIndex ? { ...msg, streaming: false } : msg
-      )
-    );
-    
-    // 첫 메시지면 제목 업데이트
-    if (messages.length === 0) {
-      const newTitle = userMessage.slice(0, 30) + (userMessage.length > 30 ? '...' : '');
-      await updateChatRoomName(currentChatId, newTitle);
-      setChatHistory(prev => 
-        prev.map(chat => 
-          chat.id === currentChatId 
-            ? { ...chat, title: newTitle, preview: userMessage.slice(0, 50) }
-            : chat
-        )
-      );
-    }
-    
+      
+      if (messages.length === 0) {
+        const newTitle = userMessage.slice(0, 30) + (userMessage.length > 30 ? '...' : '');
+        await updateChatRoomName(currentChatId, newTitle);
+        setChatHistory(prev => 
+          prev.map(chat => 
+            chat.id === currentChatId 
+              ? { ...chat, title: newTitle, preview: userMessage.slice(0, 50) }
+              : chat
+          )
+        );
+      }
+      
     } catch (error) {
       console.error('메시지 전송 실패:', error);
       setMessages(prev => prev.filter(msg => !msg.streaming));
+    } finally {
+      setIsGenerating(false);
     }
   };
   
-   
+  const handleStopGenerating = () => {
+    setIsGenerating(false);
+    setMessages(prev => prev.filter(msg => !msg.streaming));
+  };
+
+  const handleFileClick = () => {
+    // 파일 업로드 트리거
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.txt,.pdf,.sch,.brd,.png,.jpg,.jpeg';
+    input.onchange = async (e) => {
+      const file = e.target.files[0];
+      if (file && currentChatId) {
+        try {
+          const response = await uploadFile(currentChatId, file);
+          if (response.success) {
+            setUploadedFiles(prev => [...prev, {
+              id: response.data.id,
+              name: file.name,
+              url: response.data.url
+            }]);
+          }
+        } catch (error) {
+          console.error('파일 업로드 실패:', error);
+        }
+      }
+    };
+    input.click();
+  };
 
   const handleKeyPress = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -241,6 +267,17 @@ export default function CircuitAnalysisChatbot() {
         console.error('파일 업로드 실패:', file.name, error);
         alert(`파일 업로드 실패: ${file.name}`);
       }
+    }
+  };
+
+  // 채팅창 자동 높이 조절
+  const handleInputChange = (e) => {
+    setInputValue(e.target.value);
+    
+    // textarea 높이 자동 조절
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px';
     }
   };
 
@@ -406,7 +443,12 @@ export default function CircuitAnalysisChatbot() {
                   {msg.streaming && !msg.text ? (
                     <span className="loading-dots">답변 생성중</span>
                   ) : msg.sender === 'ai' ? (
-                    <ReactMarkdown>{msg.text}</ReactMarkdown>
+                    <ReactMarkdown
+                      remarkPlugins={[remarkMath]}
+                      rehypePlugins={[rehypeKatex]}
+                    >
+                      {msg.text}
+                    </ReactMarkdown>
                   ) : (
                     msg.text
                   )}
@@ -438,50 +480,52 @@ export default function CircuitAnalysisChatbot() {
               </div>
             )}
             
-            <div 
-              className={`input-container ${isDragging ? 'dragging' : ''}`}
-              onDragEnter={handleDragEnter}
-              onDragLeave={handleDragLeave}
-              onDragOver={handleDragOver}
-              onDrop={handleDrop}
-            >
-              {isDragging && (
-                <div className="drag-overlay">
-                  <Paperclip size={40} />
-                  <p>파일을 여기에 놓으세요</p>
-                </div>
-              )}
-              
-              <button className="input-button left">
+            <div className="input-container">
+              <button 
+                className="input-button left"
+                onClick={handleFileClick}
+                title="파일 첨부"
+              >
                 <Paperclip size={20} />
               </button>
               
-              <input
-                type="text"
+              <textarea
+                ref={textareaRef}
                 value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
+                onChange={handleInputChange}
                 onKeyPress={handleKeyPress}
-                placeholder="무엇이든 물어보세요"
+                placeholder="Circuit AI에게 무엇이든 물어보세요"
                 className="text-input"
+                onDragEnter={handleDragEnter}
+                onDragLeave={handleDragLeave}
+                onDragOver={handleDragOver}
+                onDrop={handleDrop}
+                rows="1"
+                style={{ resize: 'none', overflow: 'hidden' }}
               />
               
               <div className="input-actions">
                 <button className="input-button">
                   <Mic size={20} />
                 </button>
-                <button className="input-button">
-                  <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-                  </svg>
-                </button>
-                {inputValue.trim() && (
+                {isGenerating ? (
+                  <button 
+                    className="input-button stop-generating"
+                    onClick={handleStopGenerating}
+                    title="답변 중지"
+                  >
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                      <rect x="6" y="6" width="12" height="12" rx="2"></rect>
+                    </svg>
+                  </button>
+                ) : inputValue.trim() ? (
                   <button 
                     onClick={handleSendMessage}
                     className="send-button"
                   >
                     <Send size={20} />
                   </button>
-                )}
+                ) : null}
               </div>
             </div>
           </div>
