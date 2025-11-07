@@ -535,3 +535,66 @@
 .remove-file:hover {
   color: #ef4444;
 }
+
+/* 마크다운 스타일 */
+.message-bubble h1,
+.message-bubble h2,
+.message-bubble h3 {
+  margin-top: 16px;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.message-bubble h1 { font-size: 1.5em; }
+.message-bubble h2 { font-size: 1.3em; }
+.message-bubble h3 { font-size: 1.1em; }
+
+.message-bubble code {
+  background: #f3f4f6;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.9em;
+}
+
+.message-bubble pre {
+  background: #1e1e1e;
+  color: #d4d4d4;
+  padding: 12px;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 12px 0;
+}
+
+.message-bubble pre code {
+  background: none;
+  padding: 0;
+  color: inherit;
+}
+
+.message-bubble ul,
+.message-bubble ol {
+  margin: 8px 0;
+  padding-left: 24px;
+}
+
+.message-bubble li {
+  margin: 4px 0;
+}
+
+.message-bubble p {
+  margin: 8px 0;
+  line-height: 1.6;
+}
+
+.message-bubble a {
+  color: #4f46e5;
+  text-decoration: underline;
+}
+
+.message-bubble blockquote {
+  border-left: 4px solid #e5e7eb;
+  padding-left: 12px;
+  margin: 12px 0;
+  color: #6b7280;
+}

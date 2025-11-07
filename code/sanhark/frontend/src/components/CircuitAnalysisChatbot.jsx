@@ -6,6 +6,10 @@ import ChatHistory from './ChatHistory';
 import { createChatRoom, getChatRooms, sendMessage, getMessages, deleteChatRoom, updateChatRoomName } from '../services/api';
 import { sendMessageStream } from '../services/api';
 import { uploadFile } from '../services/api';
+import ReactMarkdown from 'react-markdown';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 
 export default function CircuitAnalysisChatbot() {
   const [messages, setMessages] = useState([]);
@@ -88,7 +92,9 @@ export default function CircuitAnalysisChatbot() {
     if (uploadedFiles.length > 0) {
       messageWithFiles += '\n\n[첨부된 파일]\n';
       uploadedFiles.forEach(file => {
-        messageWithFiles += `- ${file.name}: ${file.url}\n`;
+        // URL에서 쿼리 파라미터 제거
+        const cleanUrl = file.url.split('?')[0];
+        messageWithFiles += `- ${file.name}: ${cleanUrl}\n`;
       });
     }
     
@@ -394,18 +400,20 @@ export default function CircuitAnalysisChatbot() {
             </div>
           ) : (
             <div className="messages-container">
-              {messages.map((msg, idx) => (
-                <div key={idx} className={`message ${msg.sender}`}>
-                  <div className="message-bubble">
-                    {msg.streaming && !msg.text ? (
-                      <span className="loading-dots">답변 생성중</span>
-                    ) : (
-                      msg.text
-                    )}
-                  </div>
+            {messages.map((msg, idx) => (
+              <div key={idx} className={`message ${msg.sender}`}>
+                <div className="message-bubble">
+                  {msg.streaming && !msg.text ? (
+                    <span className="loading-dots">답변 생성중</span>
+                  ) : msg.sender === 'ai' ? (
+                    <ReactMarkdown>{msg.text}</ReactMarkdown>
+                  ) : (
+                    msg.text
+                  )}
                 </div>
-              ))}
-            </div>
+              </div>
+            ))}
+          </div>
           )}
         </div>
 
