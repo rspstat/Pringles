@@ -68,7 +68,36 @@ export default function CircuitAnalysisChatbot() {
 
   
   const handleSendMessage = async () => {
-    if (!inputValue.trim() || !currentChatId) return;
+    if (!inputValue.trim()) return;
+    
+    // 채팅방이 없으면 자동 생성
+    let chatId = currentChatId;
+    if (!chatId) {
+      try {
+        const response = await createChatRoom('', '');
+        if (response.success) {
+          chatId = response.data.id;
+          setCurrentChatId(chatId);
+          
+          const newChat = {
+            id: chatId,
+            title: '새 채팅',
+            preview: '',
+            createdAt: response.data.created_at,
+            messages: []
+          };
+          setChatHistory(prev => [newChat, ...prev]);
+          setShowChatHistory(true);
+        } else {
+          alert('채팅방 생성에 실패했습니다.');
+          return;
+        }
+      } catch (error) {
+        console.error('자동 채팅방 생성 실패:', error);
+        alert('채팅방 생성에 실패했습니다.');
+        return;
+      }
+    }
     
     const userMessage = inputValue;
     setInputValue('');
@@ -80,8 +109,14 @@ export default function CircuitAnalysisChatbot() {
     
     setIsGenerating(true);
 
-    // 사용자 메시지는 원본만 표시 (파일명 제외)
-    setMessages(prev => [...prev, { text: userMessage, sender: 'user' }]);
+    // 사용자 메시지 표시 (파일명 포함)
+    let displayMessage = userMessage;
+    if (uploadedFiles.length > 0) {
+      const fileList = uploadedFiles.map(f => `\`${f.name}\``).join(', ');
+      displayMessage = `${userMessage}\n\n📎${fileList}`;
+    }
+
+    setMessages(prev => [...prev, { text: displayMessage, sender: 'user' }]);
     
     setMessages(prev => [...prev, { text: '', sender: 'ai', streaming: true }]);
     const aiMessageIndex = messages.length + 1;
@@ -97,7 +132,7 @@ export default function CircuitAnalysisChatbot() {
         });
       }
       
-      await sendMessageStream(currentChatId, messageWithFiles, (chunk) => {
+      await sendMessageStream(chatId, messageWithFiles, (chunk) => {
         fullResponse += chunk;
         setMessages(prev => 
           prev.map((msg, idx) => 
@@ -115,10 +150,10 @@ export default function CircuitAnalysisChatbot() {
       
       if (messages.length === 0) {
         const newTitle = userMessage.slice(0, 30) + (userMessage.length > 30 ? '...' : '');
-        await updateChatRoomName(currentChatId, newTitle);
+        await updateChatRoomName(chatId, newTitle);
         setChatHistory(prev => 
           prev.map(chat => 
-            chat.id === currentChatId 
+            chat.id === chatId 
               ? { ...chat, title: newTitle, preview: userMessage.slice(0, 50) }
               : chat
           )
@@ -138,16 +173,42 @@ export default function CircuitAnalysisChatbot() {
     setMessages(prev => prev.filter(msg => !msg.streaming));
   };
 
-  const handleFileClick = () => {
+  const handleFileClick = async () => {
+    // 채팅방이 없으면 자동 생성
+    let chatId = currentChatId;
+    if (!chatId) {
+      try {
+        const response = await createChatRoom('', '');
+        if (response.success) {
+          chatId = response.data.id;
+          setCurrentChatId(chatId);
+          
+          const newChat = {
+            id: chatId,
+            title: '새 채팅',
+            preview: '',
+            createdAt: response.data.created_at,
+            messages: []
+          };
+          setChatHistory(prev => [newChat, ...prev]);
+          setShowChatHistory(true);
+        }
+      } catch (error) {
+        console.error('자동 채팅방 생성 실패:', error);
+        alert('채팅방을 생성할 수 없습니다.');
+        return;
+      }
+    }
+    
     // 파일 업로드 트리거
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.txt,.pdf,.sch,.brd,.png,.jpg,.jpeg';
     input.onchange = async (e) => {
       const file = e.target.files[0];
-      if (file && currentChatId) {
+      if (file && chatId) {
         try {
-          const response = await uploadFile(currentChatId, file);
+          const response = await uploadFile(chatId, file);
           if (response.success) {
             setUploadedFiles(prev => [...prev, {
               id: response.data.id,
@@ -176,10 +237,32 @@ export default function CircuitAnalysisChatbot() {
     try {
       const response = await getMessages(chatId);
       if (response.success) {
-        const formattedMessages = response.data.map(msg => ({
-          text: msg.content,
-          sender: msg.role === 'user' ? 'user' : 'ai'
-        }));
+        const formattedMessages = response.data.map(msg => {
+          let content = msg.content;
+          
+          // [첨부된 파일] 섹션 처리
+          if (msg.role === 'user' && content.includes('[첨부된 파일]')) {
+            // 사용자 텍스트 추출
+            const userTextMatch = content.match(/^([\s\S]*?)\n\n\[첨부된 파일\]/);
+            const userText = userTextMatch ? userTextMatch[1].trim() : '';
+            
+            // 파일명 추출
+            const fileLines = content.match(/- (.+?):/g);
+            if (fileLines) {
+              const fileNames = fileLines.map(line => {
+                const fileName = line.replace(/^- /, '').replace(/:.*$/, '').trim();
+                return `\`${fileName}\``;
+              }).join(', ');
+              
+              content = `${userText}\n\n📎${fileNames}`;
+            }
+          }
+          
+          return {
+            text: content,
+            sender: msg.role === 'user' ? 'user' : 'ai'
+          };
+        });
         setMessages(formattedMessages);
       }
     } catch (error) {
@@ -245,27 +328,65 @@ export default function CircuitAnalysisChatbot() {
     e.stopPropagation();
     setIsDragging(false);
     
-    if (!currentChatId) {
-      alert('먼저 채팅방을 선택하거나 생성해주세요.');
-      return;
+    const files = Array.from(e.dataTransfer.files);
+    console.log('📥 드롭된 파일:', files);
+    
+    // 채팅방이 없으면 자동 생성
+    let chatId = currentChatId;
+    console.log('현재 채팅방 ID:', chatId);
+    
+    if (!chatId) {
+      console.log('📝 새 채팅방 생성 중...');
+      try {
+        const response = await createChatRoom('', '');
+        console.log('채팅방 생성 응답:', response);
+        
+        if (response.success) {
+          chatId = response.data.id;
+          console.log('✅ 생성된 채팅방 ID:', chatId);
+          
+          const newChat = {
+            id: chatId,
+            title: '새 채팅',
+            preview: '',
+            createdAt: response.data.created_at,
+            messages: []
+          };
+          
+          setChatHistory(prev => [newChat, ...prev]);
+          setCurrentChatId(chatId);
+          setShowChatHistory(true);
+        } else {
+          alert('채팅방 생성에 실패했습니다.');
+          return;
+        }
+      } catch (error) {
+        console.error('자동 채팅방 생성 실패:', error);
+        alert('채팅방을 생성할 수 없습니다.');
+        return;
+      }
     }
     
-    const files = Array.from(e.dataTransfer.files);
-    
+    // 파일 업로드
+    console.log('📤 파일 업로드 시작, chatId:', chatId);
     for (const file of files) {
       try {
-        const response = await uploadFile(currentChatId, file);
+        console.log('업로드 중:', file.name);
+        const response = await uploadFile(chatId, file);
+        console.log('업로드 응답:', response);
+        
         if (response.success) {
           setUploadedFiles(prev => [...prev, {
             id: response.data.id,
             name: file.name,
             url: response.data.url
           }]);
-          console.log('파일 업로드 성공:', file.name);
+          console.log('✅ 파일 업로드 성공:', file.name, response.data.url);
+        } else {
+          console.error('❌ 업로드 실패:', response);
         }
       } catch (error) {
-        console.error('파일 업로드 실패:', file.name, error);
-        alert(`파일 업로드 실패: ${file.name}`);
+        console.error('❌ 파일 업로드 에러:', file.name, error);
       }
     }
   };
@@ -335,15 +456,15 @@ export default function CircuitAnalysisChatbot() {
             <Search className="menu-icon" />
             <span>채팅 검색</span>
           </button>
-          
+
           <button className="menu-item">
-            <Library className="menu-icon" />
-            <span>라이브러리</span>
+            <Code className="menu-icon" />
+            <span>Code</span>
           </button>
           
           <button className="menu-item">
-            <Code className="menu-icon" />
-            <span>Codex</span>
+            <Library className="menu-icon" />
+            <span>저장소</span>
           </button>
           
           <button className="menu-item">
@@ -437,25 +558,25 @@ export default function CircuitAnalysisChatbot() {
             </div>
           ) : (
             <div className="messages-container">
-            {messages.map((msg, idx) => (
-              <div key={idx} className={`message ${msg.sender}`}>
-                <div className="message-bubble">
-                  {msg.streaming && !msg.text ? (
-                    <span className="loading-dots">답변 생성중</span>
-                  ) : msg.sender === 'ai' ? (
-                    <ReactMarkdown
-                      remarkPlugins={[remarkMath]}
-                      rehypePlugins={[rehypeKatex]}
-                    >
-                      {msg.text}
-                    </ReactMarkdown>
-                  ) : (
-                    msg.text
-                  )}
+              {messages.map((msg, idx) => (
+                <div key={idx} className={`message ${msg.sender}`}>
+                  <div className="message-bubble">
+                    {msg.streaming && !msg.text ? (
+                      <span className="loading-dots">
+                        <Zap className="loading-icon" size={24} />
+                      </span>
+                    ) : (
+                      <ReactMarkdown
+                        remarkPlugins={[remarkMath]}
+                        rehypePlugins={[rehypeKatex]}
+                      >
+                        {msg.text}
+                      </ReactMarkdown>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
           )}
         </div>
 

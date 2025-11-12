@@ -271,25 +271,27 @@
 }
 
 .message.user .message-bubble {
-  background-color: #2563eb;
-  color: white;
-}
-
-.message.ai .message-bubble {
-  background-color: #27272a;
+  background-color: rgba(37, 99, 255, 0.8);
+  /* background-color: rgba(60, 60, 60, 0.6); */
   color: #f4f4f5;
 }
 
-/* 마크다운 코드 스타일 - AI 메시지용 */
+.message.ai .message-bubble {
+  background-color: rgba(30, 30, 30, 0.5);
+  color: #f4f4f5;
+}
+
+/* AI 메시지 내 인라인 코드 */
 .message.ai .message-bubble code {
-  background: #3f3f46;  /* 변경 */
-  color: #e5e7eb;  /* 추가 */
+  background: #3f3f46;
+  color: #e5e7eb;
   padding: 2px 6px;
   border-radius: 4px;
   font-family: 'Courier New', monospace;
   font-size: 0.9em;
 }
 
+/* AI 메시지 내 코드 블록 */
 .message.ai .message-bubble pre {
   background: #1e1e1e;
   color: #d4d4d4;
@@ -474,15 +476,33 @@
   transition: none; /* 리사이징 시 transition 제거 */
 }
 
-.loading-dots::after {
-  content: '.';
-  animation: dots 1.5s steps(3, end) infinite;
+.loading-dots {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-@keyframes dots {
-  0%, 20% { content: '.'; }
-  40% { content: '..'; }
-  60%, 100% { content: '...'; }
+.loading-icon {
+  animation: spin 2s linear infinite, pulse 2s ease-in-out infinite;
+  color: #3b82f6;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
 }
 
 /* 드래그 오버레이 */
@@ -739,4 +759,26 @@
   margin: 16px 0;
   overflow-x: auto;
   overflow-y: hidden;
+}
+
+/* 사용자 메시지 내 인라인 코드 */
+.message.user .message-bubble code {
+  background: rgba(255, 255, 255, 0.25);
+  padding: 3px 6px;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.9em;
+  color: #ffffff;
+  font-weight: 500;
+}
+
+/* 사용자 메시지 단락 간격 */
+.message.user .message-bubble p {
+  margin: 0px 0;
+  line-height: 1.6;
+}
+
+/* 간격 조정 */
+.message.user .message-bubble p + p {
+  margin-top: 16px;
 }
